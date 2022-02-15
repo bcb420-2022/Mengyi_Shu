@@ -394,7 +394,7 @@ length(hgnc_symbol_missing_gene)
 # 7-Interpret, and document
 This dataset talks about Nuclear factor erythroid 2-related factor 2 (Nrf2) plays an important role in chemoresistance.High Nrf2 expression significantly inhibit DNA. mismtach repair pathways(MMR)
 
-## What are the control and test conditions of the dataset?
+### What are the control and test conditions of the dataset?
 The test contition for this dataset is compare human Nrf2 overexpresion clone. Cells are transfect with high Nrf2 expression and low Nrf2 expression.The control is cells transfected with hempty vector(EV)
 
 ### Why is the dataset of interest to you?
