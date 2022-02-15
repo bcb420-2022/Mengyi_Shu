@@ -296,7 +296,7 @@ edgeR::plotMeanVar(d, show.raw.vars = TRUE, show.tagwise.vars=TRUE,
 
 
 
-# Identifier mapping
+# 6-Identifier mapping
 ```{r install pacakges}
 #install biomart package
 library(biomaRt)
@@ -321,7 +321,7 @@ knitr::kable(head(datasets[grep(datasets$dataset,
 ensembl = useDataset("hsapiens_gene_ensembl",mart=ensembl)
 ```
  
-# 6-Building a Biomart Query
+## Building a Biomart Query
 We are trying to convert Human Ensembl Gene Ids to HGNC symbols
 
 ```{r Filter}
@@ -340,7 +340,7 @@ knitr::kable(biomart_human_filters[
       format="html")
 ```
 
-# Attributes
+## Attributes
 
 ```{r Find the attributes that you looking for}
 knitr::kable(listAttributes(ensembl)[1:10,1:2], type="html")
