@@ -354,12 +354,16 @@ conversion_stash <- "Nrf2_id_conversion.rds"
 if(file.exists(conversion_stash)){
   Nrf2_id_conversion <- readRDS(conversion_stash)
 } else {
-  Nrf2_id_conversion <- biomaRt::getBM(attributes = c("ensembl_gene_id","hgnc_symbol"),
+  Nrf2_id_conversion <- getBM(attributes = c("ensembl_gene_id","hgnc_symbol"),
                             filters = c("ensembl_gene_id"),
-                            values = Nrf2_exp_filtered$ensembl75_id,
+                            values = Nrf2_exp_filtered$AccID,
                             mart = ensembl)
-  saveRDS(Nrf2_conversion, conversion_stash)
+  saveRDS(Nrf2_id_conversion, conversion_stash)
 }
+```
+
+```{r}
+nrow(normalized_counts)-nrow(Nrf2_id_conversion)
 ```
 
 ```{r Number of genes we were able to map}
@@ -370,7 +374,7 @@ if(file.exists(conversion_stash)){
 nrow(normalized_counts)
 ```
 ```{r Difference}
-nrow(normalized_counts) - length(which(rownames(normalized_counts) %in% Nr2_id_conversion$ensembl_gene_id))
+nrow(normalized_counts) - length(which(rownames(normalized_counts) %in% Nr2_id_conversion$ensemb175_id))
 ```
 
 
