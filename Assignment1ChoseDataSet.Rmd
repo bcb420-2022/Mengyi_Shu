@@ -1,0 +1,412 @@
+---
+title: "Assignment1"
+output: html_notebook
+---
+
+
+
+
+# Install pacakge
+Install the packages we need
+```{r install required pacakges}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+install.packages("BiocManager")
+if (!requireNamespace("GEOmetadb", quietly = TRUE))
+BiocManager::install("GEOmetadb")
+install.packages("odbc")
+install.packages("dyplr")
+install.packages("DBI")
+```
+
+
+
+```{r Buid pacakges}
+library("RSQLite")
+library("edgeR")
+library("limma")
+library("biomaRt")
+library("GEOquery")
+library("Biobase")
+library("BiocGenerics")
+library("odbc")
+library("dyplyr")
+library("DBI")
+```
+
+
+
+
+
+
+
+
+
+
+# Setting up the GEOmetadb
+Get the meta data
+```{r Get meta data}
+if(!file.exists('GEOmetadb.sqlite')) GEOmetadb::getSQLiteFile()
+```
+```{r visualizede the information about GEO meta data}
+file.info('GEOmetadb.sqlite')
+```
+```{r Connect to newlt downloaded GEO meata data base}
+con <- DBI::dbConnect(RSQLite::SQLite(),'GEOmetadb.sqlite')
+```
+```{r check out information about meta databse--available tables}
+geo_tables <- DBI::dbListTables(con)
+geo_tables
+```
+```{r check out information about meta databse,Details of individual table--samples}
+DBI::dbListFields(con,'gse')
+```
+```{r check out information about meta databse--SQL series}
+results <- DBI::dbGetQuery(con,'select * from gpl limit 5')
+knitr::kable(head(results[,1:5]), format = "html")
+```
+```{r check out information about meta databse--platforms1}
+num_platforms <- DBI::dbGetQuery(con,'select count(*) from gpl')
+num_platforms
+```
+```{r check out information about meta databse-platforms2 GLPtables}
+DBI::dbListFields(con,'gpl')
+```
+```{r}
+uniq_tech <- DBI::dbGetQuery(con,'select distinct technology from gpl')
+nrow(uniq_tech)
+```
+```{r check out information about meta databse-platforms3 technology1}
+knitr::kable(uniq_tech[1:2,], format = "html")
+```
+```{r check out information about meta databse-platforms3 technology2}
+#create table with two columns so that all data fit on the slide
+mod_table <- cbind(uniq_tech[1:(nrow(uniq_tech)/2),1],
+uniq_tech[((nrow(uniq_tech)/2)+1):nrow(uniq_tech),1])
+knitr::kable( mod_table, format = "html")
+```
+
+
+# Find datasets of interests:
+## Look for the datasets that are:
+  RNASeq data
+  human
+  dataset from within 5 years
+  related to hematopoietic
+  supplementary file is counts
+```{r select the dataset}
+sql <- paste("SELECT DISTINCT gse.title,gse.gse, gpl.title,",
+" gse.submission_date,",
+" gse.supplementary_file",
+"FROM",
+" gse JOIN gse_gpl ON gse_gpl.gse=gse.gse",
+" JOIN gpl ON gse_gpl.gpl=gpl.gpl",
+"WHERE",
+" gse.submission_date > '2015-01-01' AND",
+" gse.title LIKE '%hematopoietic%' AND",
+" gpl.organism LIKE '%Homo sapiens%' AND",
+" gpl.technology LIKE '%high-throughput sequencing%' ",
+" ORDER BY gse.submission_date DESC",sep=" ")
+```
+```{r added the supplementary file information}
+rs <- DBI::dbGetQuery(con,sql)
+# break the file names up and just get the actual file name
+unlist(lapply(rs$supplementary_file,
+              FUN = function(x){x <- unlist(strsplit(x,";")) ;
+              x <- x[grep(x,pattern="txt",ignore.case = TRUE)];
+                tail(unlist(strsplit(x,"/")),n=1)})) [1:10]
+```
+
+## get  samples that have counts data
+```{r get samples that have counts data}
+rs <- dbGetQuery(con,sql)
+counts_files <- rs$supplementary_file[grep(rs$supplementary_file,pattern = "count",ignore.case = TRUE)]
+``` 
+```{r look at the data set list right now}
+rs
+```
+
+
+## Data exploration:
+Get GEO description of dataset: which is GSE160499,the title of the dataset is Nrf2 overexpression increases risk of high tumor mutation burden in acute myeloid leukemia.
+
+```{r General GEO description of choosing dataset}
+gse <- GEOquery::getGEO("GSE160499",GSEMatrix=FALSE)
+knitr::kable(data.frame(head(GEOquery::Meta(gse))), format = "html")
+```
+
+Information about platform:
+```{r information about platform}
+current_gpl <- names(GPLList(gse))[1]
+current_gpl_info <- Meta(getGEO(current_gpl))
+current_gpl_info$title
+current_gpl_info$last_update_date
+current_gpl_info$organism
+
+```
+
+
+
+## Load the expression data
+```{r Load the expression data }
+sfiles = GEOquery::getGEOSuppFiles('GSE160499')
+fnames = rownames(sfiles)
+# there is only one supplemental file
+Nrf2_exp = read.delim(fnames[1],header=TRUE,
+                check.names = FALSE)
+```
+
+
+```{r visualize the table}
+knitr::kable(Nrf2_exp[5:10,1:8], format = "html")
+```
+## Cleaning the data
+How many genes do we have measurements for?
+```{r dimension of loaded data}
+dim(Nrf2_exp)
+```
+
+
+## DefineGroups
+Since the experiment divided AML patients into 2 groups either expressing high or low levels of Nrf2.I classified patients into 2 groups:L represent low expression and H represent high expression.
+```{r define groups}
+#Extract patient information
+Patient <- colnames(Nrf2_exp)[2:8]
+#extract type of patient cell,L stand for the patient that expresse low level of Nrf2 and H represent patients with high level of Nrf2
+CellTypes<-c("L","L","L","H","H","H","H")
+df <- data.frame(Patient,CellTypes)
+```
+
+
+
+
+
+
+## Are any of genes duplicated?
+There is no gene duplicated
+```{r summarized gene counts}
+summarized_gene_counts <- sort(table(Nrf2_exp$AccID),
+                               decreasing = TRUE)
+knitr::kable(table(Nrf2_exp$AccID)[5:8], format="html")
+```
+
+Filter weakly expressed and noninformative (e.g.,non-aligned) features.
+In edgeR, it is recommended to remove features without at least 1 read per million
+in n of the samples, where n is the size of the smallest group of replicates.
+For this dataset - the smallest group of replicates is patients with low Nrf2 expression with sample size 3
+```{r filtere out non informative}
+#translate out counts into counts per million using 
+#the edgeR package function cpm
+cpms = edgeR::cpm(Nrf2_exp[,2:8])
+rownames(cpms) <- Nrf2_exp[,1]
+# get rid of low counts
+keep = rowSums(cpms >1) >=3
+Nrf2_exp_filtered = Nrf2_exp[keep,]
+```
+It filtered out the noninformative features and the size of data set is much smaller right now
+```{r show difference between pre filtered and post filtered}
+dim(Nrf2_exp_filtered)
+dim(Nrf2_exp)
+```
+# Normalization:
+## Distribution of our data-Boxplot
+```{r Boxplot}
+data2plot <- log2(edgeR::cpm(Nrf2_exp_filtered[,2:8]))
+boxplot(data2plot, xlab = "Samples", ylab = "log2 CPM", 
+        las = 2, cex = 0.5, cex.lab = 0.5,
+        cex.axis = 0.5, main = "Nrf2 RNASeq Samples")
+#draw the median on each box plot
+abline(h = median(apply(data2plot, 2, median)), 
+       col = "green", lwd = 0.6, lty = "dashed")
+```
+## Distribution of our data-Density plot
+```{r Density plot}
+counts_density <- apply(log2(edgeR::cpm(Nrf2_exp_filtered[,2:8])), 
+                        2, density)
+  #calculate the limits across all the samples
+    xlim <- 0; ylim <- 0
+    for (i in 1:length(counts_density)) {
+      xlim <- range(c(xlim, counts_density[[i]]$x)); 
+      ylim <- range(c(ylim, counts_density[[i]]$y))
+    }
+    cols <- rainbow(length(counts_density))
+    ltys <- rep(1, length(counts_density))
+    #plot the first density plot to initialize the plot
+    plot(counts_density[[1]], xlim=xlim, ylim=ylim, type="n", 
+         ylab="Smoothing density of log2-CPM", 
+         main="", cex.lab = 0.85)
+    #plot each line
+    for (i in 1:length(counts_density)) 
+      lines(counts_density[[i]], col=cols[i], lty=ltys[i])
+    #create legend
+    legend("topright", colnames(data2plot),  
+           col=cols, lty=ltys, cex=0.75, 
+           border ="blue",  text.col = "green4", 
+           merge = TRUE, bg = "gray90")
+```
+## MA plot for Nrf2 data-comparing the L1 and H1 sample in data set
+```{r MA plot}
+plotMA(log2(Nrf2_exp[,c(2,5)]), ylab="M - ratio log expression", 
+       main="Nrf2 L1 vs Nrf2 H1 example")
+```
+
+## Applying TMM to our dataset
+create an edgeR container for RNASeq count data
+```{r Normalization}
+celltypes <-colnames(Nrf2_exp)[2:8]
+filtered_data_matrix <- as.matrix(Nrf2_exp_filtered[,2:8])
+rownames(filtered_data_matrix) <- Nrf2_exp_filtered$AccID
+d = edgeR::DGEList(counts=filtered_data_matrix, group=df$CellTypes)
+```
+
+## Calculate the normalization factors
+
+```{r calculate the normalization factors}
+d = edgeR::calcNormFactors(d)
+```
+## Get normalized data
+```{r get normalzied data}
+#get the normalized data
+normalized_counts <- edgeR::cpm(d)
+```
+```{r check normalized counts value}
+normalized_counts
+```
+
+## Inspect the sample separation using a multidimensional scaling plot or MDS plot post normalization.
+```{r visualized post normalized data}
+edgeR::plotMDS(d, labels=celltypes,
+  col = c("darkgreen","blue")[factor(df$CellTypes)])
+```
+# Dispersion
+```{r Dispersion}
+model_design <- model.matrix(~df$Patient 
+                             + df$CellTypes+0)
+d <- edgeR::estimateDisp(d, model_design)
+edgeR::plotMeanVar(d, show.raw.vars = TRUE, show.tagwise.vars=TRUE, 
+            show.ave.raw.vars = TRUE,  
+            NBline=TRUE,
+            show.binned.common.disp.vars = TRUE)
+```
+
+Graphing the BCV which is a dispersion-square
+This create a visual representation of the dispersion
+Plot the genewise biological coefficient of variation (BCV) against gene abundance
+
+```{r Graph the BCV}
+edgeR::plotBCV(d,col.tagwise = "black",col.common = "red",)
+```
+
+
+
+
+# Identifier mapping
+```{r install pacakges}
+#install biomart package
+library(biomaRt)
+#Get all availale marts
+listMarts()
+#If different version is needed
+listEnsemblArchives()[1:10,]
+```
+```{r connect to disired mart}
+#Connect to the desired mart
+ensembl <- useMart("ensembl")
+```
+```{r check the dataset available}
+#Get the set of datasets available
+datasets <- listDatasets(ensembl)
+knitr::kable(head(datasets),format = "html")
+```
+```{r Limit to human dataset}
+#Limit to the human datasets available
+knitr::kable(head(datasets[grep(datasets$dataset,
+                  pattern = "sapiens"),]),format = "html")
+ensembl = useDataset("hsapiens_gene_ensembl",mart=ensembl)
+```
+ 
+# Building a Biomart Query
+We are trying to convert Human Ensembl Gene Ids to HGNC symbols
+
+```{r Filter}
+#how many filters are there?
+dim(listFilters(ensembl))
+```
+
+```{r visualizing Filters}
+knitr::kable(listFilters(ensembl)[1:10,1:2], type="html")
+```
+
+```{r Filter  continued}
+biomart_human_filters <- listFilters(ensembl)
+knitr::kable(biomart_human_filters[
+  grep(biomart_human_filters$name,pattern="ensembl"),],
+      format="html")
+```
+
+# Attributes
+
+```{r Find the attributes that you looking for}
+knitr::kable(listAttributes(ensembl)[1:10,1:2], type="html")
+```
+
+```{r}
+conversion_stash <- "Nrf2_id_conversion.rds"
+if(file.exists(conversion_stash)){
+  Nrf2_id_conversion <- readRDS(conversion_stash)
+} else {
+  Nrf2_id_conversion <- biomaRt::getBM(attributes = c("ensembl_gene_id","hgnc_symbol"),
+                            filters = c("ensembl_gene_id"),
+                            values = Nrf2_exp_filtered$ensembl75_id,
+                            mart = ensembl)
+  saveRDS(Nrf2_conversion, conversion_stash)
+}
+```
+
+```{r Number of genes we were able to map}
+ length(which(rownames(normalized_counts) %in% 
+                Nrf2_id_conversion$ensembl_gene_id))
+```
+```{r Out of our total ensembl genes that we started with:}
+nrow(normalized_counts)
+```
+```{r Difference}
+nrow(normalized_counts) - length(which(rownames(normalized_counts) %in% Nr2_id_conversion$ensembl_gene_id))
+```
+
+
+
+# Interpret, and document
+This dataset talks about Nuclear factor erythroid 2-related factor 2 (Nrf2) plays an important role in chemoresistance.High Nrf2 expressionsignificantly inhibit DNA. mismtach repair pathways(MMR)
+
+## What are the control and test conditions of the dataset?
+The test contition for this dataset is compare human Nrf2 overexpresion clone. Cells are transfect with high Nrf2 expression and low Nrf2 expression.The control is cells transfected with hempty vector(EV)
+
+### Why is the dataset of interest to you?
+I found this dataset interesting because Acute myeloid leukemia(AML) is a malignant tumor of myeloid progenitors.Despite the fact that leukemia cells can be killed completely by chemotherapy but the 5 year survival rate is very poor. Majority of AML patient died because of initial resistance to chemotherapy and  relapsed AML.Therefore the resistant of leukemia cell to chemotherapy is the major obstacle in the treatment of AML.This dataset illustrate the correaltion between Nrf2 and chemotherapy resistant which indicates that Nfr2 might be a potential target in future AML therapy.
+
+### Were there expression values that were not unique for specific genes? How did you handle these?
+There are no duplication of genes in the original file
+If there are ,we can find the duplicated gene and removed manually
+
+### Were there expression values that could not be mapped to current HUGO symbols?
+ Yes
+
+### How many outliers were removed?
+After filtering, our observation number decrease from 54261 to 14562, so the total outliers remove were 39699.
+
+### How did you handle replicates?
+Patients with H are patients cell with high Nrf2 expression,patient with L are patientis cell with low Nrf2 expression.Due to the heterogeneity of AML patients cell might have different reaction to Nrf2 expression level therefore replicates are needed to avoid result by chance.
+
+### What is the final coverage of your dataset?
+There are total 14562 genes are being observed, before filtering there are 54261 genes.
+
+# Reference
+1.Lecture modules:https://q.utoronto.ca/courses/248455/files/19147947?module_item_id=3463364
+2.Liu, P., Ma, D., Wang, P. et al. Nrf2 overexpression increases risk of high tumor mutation burden in acute myeloid leukemia by inhibiting MSH2. Cell Death Dis 12, 20 (2021). https://doi.org/10.1038/s41419-020-03331-x
+
+
+
+
+
+
+
