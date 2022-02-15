@@ -395,7 +395,7 @@ length(hgnc_symbol_missing_gene)
 This dataset talks about Nuclear factor erythroid 2-related factor 2 (Nrf2) plays an important role in chemoresistance.High Nrf2 expression significantly inhibit DNA. mismtach repair pathways(MMR)
 
 ### What are the control and test conditions of the dataset?
-The test contition for this dataset is compare human Nrf2 overexpresion clone. Cells are transfect with high Nrf2 expression and low Nrf2 expression.The control is cells transfected with hempty vector(EV)
+The test contition for this dataset is compare human Nrf2 overexpresion clone. Cells are transfect with high Nrf2 expression and low Nrf2 expression.The control is cells transfected with hempty vector(EV).In this experiment,we are studying the role of Nrf2 played in AML patients.The results had indicates that patients with higher Nrf2 expression had a higher frequency of gene mutation and drug resistance.
 
 ### Why is the dataset of interest to you?
 I found this dataset interesting because Acute myeloid leukemia(AML) is a malignant tumor of myeloid progenitors.Despite the fact that leukemia cells can be killed completely by chemotherapy but the 5 year survival rate is very poor. Majority of AML patient died because of initial resistance to chemotherapy and  relapsed AML.Therefore the resistant of leukemia cell to chemotherapy is the major obstacle in the treatment of AML.This dataset illustrate the correaltion between Nrf2 and chemotherapy resistant which indicates that Nfr2 might be a potential target in future AML therapy.
@@ -411,7 +411,7 @@ No all expression values are mapped as shown in code
 After filtering, our observation number decrease from 54261 to 14562, so the total outliers remove were 39699.
 
 ### How did you handle replicates?
-Patients with H are patients cell with high Nrf2 expression,patient with L are patientis cell with low Nrf2 expression.Due to the heterogeneity of AML patients cell might have different reaction to Nrf2 expression level therefore replicates are needed to avoid result by chance.
+Patients with H are patients cell with high Nrf2 expression,patient with L are patientis cell with low Nrf2 expression.Due to the heterogeneity of AML patients,these replicates are handled through two ways.First,I removed the outliers and non informative feature across the replicates.Second I normalized the data toreduce the biological variation
 
 ### What is the final coverage of your dataset?
 There are total 14562 genes are being observed, before filtering there are 54261 genes.
