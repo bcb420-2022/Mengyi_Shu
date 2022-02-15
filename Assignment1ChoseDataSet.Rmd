@@ -2,11 +2,12 @@
 title: "Assignment1"
 output: html_notebook
 ---
+# Introduction
+In thie notebook,I will introduce the procedure of how to select a dataset in GEO through GEOmetadb package.Follow up with cleaning the data,normalizing and mapping the identifier.
 
 
 
-
-# Install pacakge
+# 0-Install package
 Install the packages we need
 ```{r install required pacakges}
 if (!requireNamespace("BiocManager", quietly = TRUE))
@@ -19,7 +20,7 @@ install.packages("DBI")
 ```
 
 
-
+Build the packages
 ```{r Buid pacakges}
 library("RSQLite")
 library("edgeR")
@@ -42,7 +43,7 @@ library("DBI")
 
 
 
-# Setting up the GEOmetadb
+# 1-Setting up the GEOmetadb
 Get the meta data
 ```{r Get meta data}
 if(!file.exists('GEOmetadb.sqlite')) GEOmetadb::getSQLiteFile()
@@ -86,7 +87,7 @@ knitr::kable( mod_table, format = "html")
 ```
 
 
-# Find datasets of interests:
+# 2-Find datasets of interests:
 ## Look for the datasets that are:
   RNASeq data
   human
@@ -159,7 +160,7 @@ Nrf2_exp = read.delim(fnames[1],header=TRUE,
 ```{r visualize the table}
 knitr::kable(Nrf2_exp[5:10,1:8], format = "html")
 ```
-## Cleaning the data
+# 3-Cleaning the data
 How many genes do we have measurements for?
 ```{r dimension of loaded data}
 dim(Nrf2_exp)
@@ -207,7 +208,7 @@ It filtered out the noninformative features and the size of data set is much sma
 dim(Nrf2_exp_filtered)
 dim(Nrf2_exp)
 ```
-# Normalization:
+# 4-Normalization:
 ## Distribution of our data-Boxplot
 ```{r Boxplot}
 data2plot <- log2(edgeR::cpm(Nrf2_exp_filtered[,2:8]))
@@ -245,7 +246,7 @@ counts_density <- apply(log2(edgeR::cpm(Nrf2_exp_filtered[,2:8])),
 ```
 ## MA plot for Nrf2 data-comparing the L1 and H1 sample in data set
 ```{r MA plot}
-plotMA(log2(Nrf2_exp[,c(2,5)]), ylab="M - ratio log expression", 
+edgeR::plotMA(log2(Nrf2_exp[,c(2,5)]), ylab="M - ratio log expression", 
        main="Nrf2 L1 vs Nrf2 H1 example")
 ```
 
@@ -274,10 +275,10 @@ normalized_counts
 
 ## Inspect the sample separation using a multidimensional scaling plot or MDS plot post normalization.
 ```{r visualized post normalized data}
-edgeR::plotMDS(d, labels=celltypes,
+plotMDS(d, labels=celltypes,
   col = c("darkgreen","blue")[factor(df$CellTypes)])
 ```
-# Dispersion
+# 5-Dispersion
 ```{r Dispersion}
 model_design <- model.matrix(~df$Patient 
                              + df$CellTypes+0)
@@ -288,13 +289,9 @@ edgeR::plotMeanVar(d, show.raw.vars = TRUE, show.tagwise.vars=TRUE,
             show.binned.common.disp.vars = TRUE)
 ```
 
-Graphing the BCV which is a dispersion-square
-This create a visual representation of the dispersion
-Plot the genewise biological coefficient of variation (BCV) against gene abundance
 
-```{r Graph the BCV}
-edgeR::plotBCV(d,col.tagwise = "black",col.common = "red",)
-```
+
+
 
 
 
@@ -324,7 +321,7 @@ knitr::kable(head(datasets[grep(datasets$dataset,
 ensembl = useDataset("hsapiens_gene_ensembl",mart=ensembl)
 ```
  
-# Building a Biomart Query
+# 6-Building a Biomart Query
 We are trying to convert Human Ensembl Gene Ids to HGNC symbols
 
 ```{r Filter}
@@ -349,38 +346,53 @@ knitr::kable(biomart_human_filters[
 knitr::kable(listAttributes(ensembl)[1:10,1:2], type="html")
 ```
 
-```{r}
+```{r Mapping Identifier}
 conversion_stash <- "Nrf2_id_conversion.rds"
 if(file.exists(conversion_stash)){
   Nrf2_id_conversion <- readRDS(conversion_stash)
 } else {
   Nrf2_id_conversion <- getBM(attributes = c("ensembl_gene_id","hgnc_symbol"),
-                            filters = c("ensembl_gene_id"),
+                            filters = c("hgnc_symbol"),
                             values = Nrf2_exp_filtered$AccID,
                             mart = ensembl)
   saveRDS(Nrf2_id_conversion, conversion_stash)
 }
 ```
 
-```{r}
-nrow(normalized_counts)-nrow(Nrf2_id_conversion)
-```
+
 
 ```{r Number of genes we were able to map}
  length(which(rownames(normalized_counts) %in% 
-                Nrf2_id_conversion$ensembl_gene_id))
+                Nrf2_id_conversion$hgnc_symbol))
 ```
 ```{r Out of our total ensembl genes that we started with:}
 nrow(normalized_counts)
-```
-```{r Difference}
-nrow(normalized_counts) - length(which(rownames(normalized_counts) %in% Nr2_id_conversion$ensemb175_id))
+
 ```
 
+```{r Differences}
+nrow(normalized_counts)-nrow(Nrf2_id_conversion)
+```
 
 
-# Interpret, and document
-This dataset talks about Nuclear factor erythroid 2-related factor 2 (Nrf2) plays an important role in chemoresistance.High Nrf2 expressionsignificantly inhibit DNA. mismtach repair pathways(MMR)
+```{r merge new identifier}
+normalized_counts_annot <- merge(Nrf2_id_conversion,normalized_counts,by.x=1,by.y=0,all.y=TRUE)
+knitr::kable(normalized_counts_annot[1:5,1:5],type = "html")
+```
+
+
+
+
+```{r  How many identifiers aremissing}
+hgnc_symbol_missing_gene <-normalized_counts_annot$hgnc_symbol[which(is.na(normalized_counts_annot$ensembl_gene_id))]
+
+length(hgnc_symbol_missing_gene)
+```
+
+
+
+# 7-Interpret, and document
+This dataset talks about Nuclear factor erythroid 2-related factor 2 (Nrf2) plays an important role in chemoresistance.High Nrf2 expression significantly inhibit DNA. mismtach repair pathways(MMR)
 
 ## What are the control and test conditions of the dataset?
 The test contition for this dataset is compare human Nrf2 overexpresion clone. Cells are transfect with high Nrf2 expression and low Nrf2 expression.The control is cells transfected with hempty vector(EV)
@@ -393,7 +405,7 @@ There are no duplication of genes in the original file
 If there are ,we can find the duplicated gene and removed manually
 
 ### Were there expression values that could not be mapped to current HUGO symbols?
- Yes
+No all expression values are mapped as shown in code
 
 ### How many outliers were removed?
 After filtering, our observation number decrease from 54261 to 14562, so the total outliers remove were 39699.
