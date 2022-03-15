@@ -359,10 +359,10 @@ downreg_genes <- row.names(qlf_hits)[
 
 # Write tables to files
 write.table(x=upreg_genes,
-            "./thresholded_gene_list/Nrf2_upregulated_genes.txt",sep='\t',
+            "./gene_list/Nrf2_upregulated_genes.txt",sep='\t',
             row.names = FALSE,col.names = FALSE,quote = FALSE)
 write.table(x=downreg_genes,
-            "./thresholded_gene_list/Nrf2_downregulated_genes.txt",sep='\t',
+            "./gene_list/Nrf2_downregulated_genes.txt",sep='\t',
             row.names = FALSE,col.names = FALSE,quote = FALSE)
 ```
 
