@@ -430,7 +430,7 @@ download.file(paste(gmt_url, gmt_file, sep = ""), destfile = dest_gmt_file)
 
 
 
-```{r convert_file, warning=FALSE, results='hide', message=FALSE}
+```{r create ranked gene list, warning=FALSE, results='hide', message=FALSE}
 GeneRankedList <- data.frame(GeneName = rownames(qlf_hits$table), 
                              rank = -log10(qlf_hits$table$PValue) * 
                                     sign(qlf_hits$table$logFC))
@@ -492,7 +492,7 @@ write.table(GeneRankedList, file = "GeneRankedList.rnk", sep = "\t",
 <br><br>
 
 
-### Summaries of enrichment results.
+### Interpretation
 
 
 * How do these results compare to the results from the thresholded analysis in Assignment #2. Compare qualitatively. Is this a straight forward comparison? Why or why not?
