@@ -1,0 +1,641 @@
+---
+title: "Data set Pathway and Network Analysis "
+output:
+  html_document:
+    toc: yes
+---
+Name: Mengyi Shu  
+Student Number: 1004553636  
+
+***
+Install packages: 
+```{r, message = FALSE, warning=FALSE}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+if (!requireNamespace("GEOmetadb", quietly = TRUE))
+  BiocManager::install("GEOmetadb")
+if(!requireNamespace("edgeR", quietly = TRUE))
+  BiocManager::install("edgeR")
+if(!requireNamespace("biomaRt", quietly = TRUE))
+  BiocManager::install("biomaRt")
+if(!requireNamespace("ComplexHeatmap", quietly = TRUE))
+  BiocManager::install("ComplexHeatmap")
+if(!requireNamespace("circlize", quietly = TRUE))
+  install.packages("circlize")
+if (! requireNamespace("RCurl", quietly=TRUE)) 
+    install.packages("RCurl")
+library(GEOmetadb)
+library(edgeR)
+library(biomaRt)
+library(ComplexHeatmap)
+library(circlize)
+library(RCurl)
+```
+
+# Preparation:Normalized expression set from Assignment #1
+
+<br>
+
+### Loading data
+
+Data was downloaded from GEO with id GSE160499. This data set contain AML pateints and divided into 2 groups, one group with high Nrf2 expression and one with low Nrf2 expression
+
+```{r, message = FALSE, warning=FALSE}
+# Set GSEMatrix to FALSE to get other columns from the GSE records
+gse <- getGEO("GSE160499", GSEMatrix=FALSE)
+# Get platform info from GSE160499
+current_gpl <- names(GPLList(gse))[1]
+current_gpl_info <- Meta(getGEO(current_gpl))
+# Get expression data (gene raw counts) from supplementary files
+supp_files = getGEOSuppFiles('GSE160499')
+file_names = rownames(supp_files)
+# There is only one supplemental file
+# Set check.names to false so the column names are not automatically reformatted
+Nrf2_exp = read.delim(file_names[1], header=TRUE, check.names=FALSE)
+```
+<br>
+
+
+### Define Sample Groups
+Since the experiment divided AML patients into 2 groups either expressing high or low levels of Nrf2.I classified patients into 2 groups:L represent low expression and H represent high expression.
+```{r define groups}
+#Extract patient information
+Patient <- colnames(Nrf2_exp)[2:8]
+#extract type of patient cell,L stand for the patient that expresse low level of Nrf2 and H represent patients with high level of Nrf2
+CellTypes<-c("L","L","L","H","H","H","H")
+sample <- data.frame(Patient,CellTypes)
+
+```
+
+<br>
+
+### Filtering data
+
+No duplicated genes were discovered in the dataset.  
+
+Genes with low counts are filtered out. 
+
+```{r filtere out non informative}
+#translate out counts into counts per million using 
+#the edgeR package function cpm
+cpms = edgeR::cpm(Nrf2_exp[,2:8])
+rownames(cpms) <- Nrf2_exp[,1]
+# get rid of low counts
+keep = rowSums(cpms >1) >=3
+Nrf2_exp_filtered = Nrf2_exp[keep,]
+# Transform dataframe counts to matrix
+filtered_data_matrix <- as.matrix(Nrf2_exp_filtered[, 2:8])
+rownames(filtered_data_matrix) <- Nrf2_exp_filtered$AccID
+```
+
+**Number of removed genes**: `r length(Nrf2_exp$AccID) - dim(Nrf2_exp_filtered)[1]`  
+**Number of remaining genes**: `r dim(Nrf2_exp_filtered)[1]`  
+
+<br>
+
+### Normalization results
+
+```{r Boxplot}
+data2plot <- log2(edgeR::cpm(Nrf2_exp_filtered[,2:8]))
+boxplot(data2plot, xlab = "Samples", ylab = "log2 CPM", 
+        las = 2, cex = 0.5, cex.lab = 0.5,
+        cex.axis = 0.5, main = "Nrf2 RNASeq Samples")
+#draw the median on each box plot
+abline(h = median(apply(data2plot, 2, median)), 
+       col = "green", lwd = 0.6, lty = "dashed")
+```
+<br><br>
+
+**FIGURE 1. BOXPLOT of post-nomalization.** 
+<br><br>
+```{r Density plot}
+counts_density <- apply(log2(edgeR::cpm(Nrf2_exp_filtered[,2:8])), 
+                        2, density)
+  #calculate the limits across all the samples
+    xlim <- 0; ylim <- 0
+    for (i in 1:length(counts_density)) {
+      xlim <- range(c(xlim, counts_density[[i]]$x)); 
+      ylim <- range(c(ylim, counts_density[[i]]$y))
+    }
+    cols <- rainbow(length(counts_density))
+    ltys <- rep(1, length(counts_density))
+    #plot the first density plot to initialize the plot
+    plot(counts_density[[1]], xlim=xlim, ylim=ylim, type="n", 
+         ylab="Smoothing density of log2-Nrf2`", 
+         main="", cex.lab = 0.85)
+    #plot each line
+    for (i in 1:length(counts_density)) 
+      lines(counts_density[[i]], col=cols[i], lty=ltys[i])
+    #create legend
+    legend("topright", colnames(data2plot),  
+           col=cols, lty=ltys, cex=0.75, 
+           border ="blue",  text.col = "green4", 
+           merge = TRUE, bg = "gray90")
+```
+<br><br>
+**FIGURE 2. Density Plot of post-nomalization.** 
+<br><br>
+```{r MA plot}
+plotMA(log2(Nrf2_exp[,c(2,5)]), ylab="M - ratio log expression", 
+       main="Nrf2 L1 vs Nrf2 H1 example")
+```
+### Applying TMM to our dataset
+
+create an edgeR container for RNASeq count data
+```{r Normalization}
+celltypes <-colnames(Nrf2_exp)[2:8]
+filtered_data_matrix <- as.matrix(Nrf2_exp_filtered[,2:8])
+rownames(filtered_data_matrix) <- Nrf2_exp_filtered$AccID
+d = edgeR::DGEList(counts=filtered_data_matrix, group=sample$CellTypes)
+```
+
+### Calculate the normalization factors
+
+```{r calculate the normalization factors}
+d = edgeR::calcNormFactors(d)
+```
+#### Get normalized data
+```{r get normalzied data}
+#get the normalized data
+normalized_counts <- edgeR::cpm(d)
+```
+
+```{r visualized post normalized data}
+plotMDS(d, labels=celltypes,
+  col = c("darkgreen","blue")[factor(sample$CellTypes)])
+```
+<br><br>
+
+**FIGURE 4. MDS Plot of post-normalization.** 
+<br><br>
+
+#### Identifying mapping
+```{r connect to disired mart}
+#Connect to the desired mart
+ensembl <- useMart("ensembl")
+```
+```{r check the dataset available}
+#Get the set of datasets available
+datasets <- listDatasets(ensembl)
+knitr::kable(head(datasets),format = "html")
+```
+<br><br>
+```{r Limit to human dataset}
+#Limit to the human datasets available
+knitr::kable(head(datasets[grep(datasets$dataset,
+                  pattern = "sapiens"),]),format = "html")
+ensembl = useDataset("hsapiens_gene_ensembl",mart=ensembl)
+```
+#### Building a Biomart Query
+We are trying to convert Human Ensembl Gene Ids to HGNC symbols
+
+```{r Filter}
+#how many filters are there?
+dim(listFilters(ensembl))
+```
+
+```{r visualizing Filters}
+knitr::kable(listFilters(ensembl)[1:10,1:2], type="html")
+```
+```{r Filter  continued}
+biomart_human_filters <- listFilters(ensembl)
+knitr::kable(biomart_human_filters[
+  grep(biomart_human_filters$name,pattern="ensembl"),],
+      format="html")
+```
+#### Attributes
+
+```{r Find the attributes that you looking for}
+knitr::kable(listAttributes(ensembl)[1:10,1:2], type="html")
+```
+```{r Mapping Identifier}
+conversion_stash <- "Nrf2_id_conversion.rds"
+if(file.exists(conversion_stash)){
+  Nrf2_id_conversion <- readRDS(conversion_stash)
+} else {
+  Nrf2_id_conversion <- getBM(attributes = c("ensembl_gene_id","hgnc_symbol"),
+                            filters = c("hgnc_symbol"),
+                            values = Nrf2_exp_filtered$AccID,
+                            mart = ensembl)
+  saveRDS(Nrf2_id_conversion, conversion_stash)
+}
+```
+***
+  
+
+<br> <br>
+
+
+# Preparation:Differential gene expression analysis from Assignment #2
+
+
+### Calculating p-values and multiple hypothesis testing.
+
+Calculating p-values for the AML patients with high Nrf2 expression and low Nrf2 expression: 
+For multiple hypothesis correction, I used Benjamini-Hochberg procedure which is standard way to decrease false discovery rate.
+I set the p-value threshold to 0.05 since it is a standard statistics that a fact is happened by chance
+
+```{r, message = FALSE, warning=FALSE}
+# Create a container for expression count data 
+data = DGEList(counts=filtered_data_matrix, group=sample$CellTypes)
+# Create model
+model_design_pat <- model.matrix(~ sample$CellTypes)
+#estimate dispersion
+data <- estimateDisp(data, model_design_pat)
+#calculate normalization factors
+data <- calcNormFactors(data)
+#fit model
+fit <- glmQLFit(data, model_design_pat)
+#calculate differential expression
+qlf <- glmQLFTest(fit)
+qlf_hits <- topTags(qlf, sort.by = "PValue", adjust.method = "BH", n = nrow(filtered_data_matrix))
+```
+
+**Number of genes pass p < 0.05 in 2 groups of AML patients**: `r length(which(qlf_hits$table$PValue < 0.05))`  
+**Number of genes pass correction in 2 groups of AML patients**: `r length(which(qlf_hits$table$FDR < 0.05))`  
+**Number of up-regulated genes in 2 groups of AML patients**: `r length(which(qlf_hits$table$FDR < 0.05 & qlf_hits$table$logFC > 0))`  
+**Number of down-regulated genes in 2 groups of AML patients**: `r length(which(qlf_hits$table$FDR < 0.05 & qlf_hits$table$logFC < 0))` 
+
+
+
+### Volcano plot
+
+Build volcano plot: 
+
+```{r, message = FALSE, warning=FALSE, fig.cap="Volcano plot for AML patient "}
+# Assign colours to genes: up-regulated is red, down-regulated is blue
+colours <- vector(mode="character", length=nrow(qlf_hits))
+colours[] <- 'grey'
+colours[qlf_hits$table$logFC < 0 & qlf_hits$table$FDR < 0.05] <- 'blue'
+colours[qlf_hits$table$logFC > 0 & qlf_hits$table$FDR < 0.05] <- 'red'
+colours[row.names(qlf_hits) == "NFE2L2"] <- 'green'
+# Make plot
+plot(qlf_hits$table$logFC,
+     -log(qlf_hits$table$PValue, base=10),
+     col = colours,
+     xlab = "logFC",
+     ylab ="-log(p-value)", 
+     main="AML patients with Nrf2 gene Volcano Plot")
+# Create legend
+legend(2.5, 5, legend=c("down-regulated genes","up-regulated genes", "non-significant", "Nrf2"),
+       fill = c("blue", "red", "grey", "green"), cex = 0.6)
+```
+
+
+### Heat map
+
+Create heat map:
+
+```{r, message = FALSE, warning=FALSE, fig.cap="Heat map for high Nrf2 AML patients versus low Nrf2 AML patients"}
+# Get top hit gene names
+top_hits <- rownames(qlf_hits)[qlf_hits$table$PValue < 0.05]
+# Calculate logCPM
+hm_matrix <- log2(filtered_data_matrix[, 1:7] +1)
+# Scale heat map matrix by rows
+hm_matrix_top <- t(scale(t(hm_matrix[rownames(hm_matrix) %in% top_hits, ])))
+# Create color ramps
+if(min(hm_matrix_top) == 0){
+    heatmap_col = colorRamp2(c( 0, max(hm_matrix_top)), 
+                             c( "white", "red"))
+  } else {
+    heatmap_col = colorRamp2(c(min(hm_matrix_top), 0, max(hm_matrix_top)), c("blue", "white", "red"))
+  }
+# Create heatmap
+Heatmap(as.matrix(hm_matrix_top),
+        cluster_rows = TRUE, show_row_dend = TRUE,
+        cluster_columns = TRUE, show_column_dend = TRUE,
+        col=heatmap_col, show_column_names = TRUE, 
+        show_row_names = FALSE, show_heatmap_legend = TRUE, 
+        column_title = "AML pateint with high Nrf2 expression level versus low Nrf2 expression level")
+```
+
+
+# Thresholded over-representation analysis
+
+
+<br>
+
+
+
+### Creating thresholded list of genes
+
+I choose to use a thresholded list of genes to perform Gene List Enrichment Analysis which is a statistical method that determines whether genes from pre-defined sets(in this case the pathways in gprofiles) are present more than would be expected (over-represented) in a subset of data below.
+The annotation data I used is Reactome, Go biologoical process, and Wiki pathways, the version is :e105_eg52_p16_e84549f
+I used these three dataset becuase this three is very comprehensive data set of human pathways
+
+
+```{r, message = FALSE, warning=FALSE}
+# Create separate tables of up- and down-regulated genes 
+upreg_genes <- row.names(qlf_hits)[
+  which(qlf_hits$table$FDR < 0.05 & qlf_hits$table$logFC > 0)]
+downreg_genes <- row.names(qlf_hits)[
+  which(qlf_hits$table$FDR < 0.05 & qlf_hits$table$logFC < 0)]
+
+# Write tables to files
+write.table(x=upreg_genes,
+            "./gene_list/Nrf2_upregulated_genes.txt",sep='\t',
+            row.names = FALSE,col.names = FALSE,quote = FALSE)
+write.table(x=downreg_genes,
+            "./gene_list/Nrf2_downregulated_genes.txt",sep='\t',
+            row.names = FALSE,col.names = FALSE,quote = FALSE)
+```
+
+  
+
+<br>
+
+
+### G:Profiler analysis on thresholded gene lists
+
+I used G:Profiler because it is a suitable method for analyzing over-representation in thresholded gene list which do not require ranked list. We also had some experience working with G:Profiler because we have relative exprience and more familira with it(the homework).
+
+All G:Profiler queries were run using the following parameters:  
+
+![G:Profiler parameters for running Nrf2 experiment differentially expressed genes](./A2Plot/Parameter.PNG)  
+  
+
+
+For all below analyses on terms, I set the term size range to 1-300.  
+
+<br>
+
+#### Over-representation analysis 
+
+**Results using the whole list (both up- and down-regulated genes):**  
+
+* Without limiting the term size, there are 514 terms (genesets) from GO:BP, 33 from Reactome, and 3 from WikiPathways, with a p-value threshold of 0.05.  
+
+
+* Result from GO BP shows that many differentially expressed genes in AML patients are involved in :  
+
+![AML patients with all genes over-representation analysis results from GO: BP, term size = 300](./A2Plot/whole_GO.PNG)  
+
+* Result from Reactome is similar to terms from GO BP: 
+
+![AML patients with all genes over-representation analysis results from GO: BP, term size = 300](./A2Plot/whole_reac_wiki.PNG)  
+
+ 
+
+**Results using the up-regulated genes:**  
+
+* When I do not limit the term size, there are 535 terms (genesets) from GO:BP, 29 from Reactome, and 4 from WikiPathways, with a p-value threshold of 0.05.  
+* Result from GO BP shows that many differential expressed genes in AML patients are involved in bone mineralization,definitive hemopoiesis,and embryonic skeletal system development.Result for Reactome shows that many genes are related to ECM interaction and transportation,interferon gamma signaling and muscle contraction.For wiki pathway,gene sets involved miRNA targets in ECM and membrane receptors,Focal adhesion: PI3K-Akt-mTOR-signaling pathway,this is a pathway involves in intracellular signaling pathway involved in numerous biological processes such as cell proliferation and apoptosis, angiogenesis, and glucose metabolism.
+![AML patients with upregulated genes over-representation analysis results from GO: BP, term size = 300](./A2Plot/up_GO.PNG)  
+
+![AML patients with upregulated genes over-representation analysis results from REACTOME and wiki, term size = 300](./A2Plot/up_reac_wiki.PNG)  
+
+
+
+
+**Results using the down-regulated genes:**  
+
+* When I do not limit the term size, there are 13 terms (genesets) from GO:BP, 0 from Reactome, and 5 from WikiPathways, with a p-value threshold of 0.05.  
+
+* The top terms result from GO BP are gene set about regulation of transportation and regulation of translation such as  acrosomal vesicle exocytosis ,phenylalanyl-tRNA aminoacylation.The top terms result from WP is related to molecule movement and tranportation such as Intraflagellar transport proteins binding to dynein pathway and Vasopressin-regulated water reabsorption.
+
+![AML patients with downregulated genes over-representation analysis results from GO: BP,REAC and wiki, term size = 300](./A2Plot/downregulated.png.)
+
+***
+
+
+<br>
+
+
+# Non-thresholded Gene set Enrichment Analysis
+
+### GSEA input files and parameters
+
+
+* Firstly, I created a ranked gene list with hugo_symbol as the rownames of orginal table from assignment 2 amd calculated the rank scores from assignment 2 scores
+
+* The bader lab has provide many geneset for GSEA analysis [baderlab geneset](https://download.baderlab.org/EM_Genesets/)[@Bader] I choose to download the with April 1st GOBP all pathways and no GO IEA.This is the latest version of all human pathways
+
+
+```{r}
+gmt_url = "http://download.baderlab.org/EM_Genesets/current_release/Human/symbol/"
+data_dir=getwd()
+# list all the files on the server
+filenames = getURL(gmt_url)
+tc = textConnection(filenames)
+contents = readLines(tc)
+close(tc)
+# get the gmt that has all the pathways and does not include terms inferred
+# from electronic annotations(IEA) start with gmt file that has pathways only
+rx = gregexpr("(?<=<a href=\")(.*.GOBP_AllPathways_no_GO_iea.*.)(.gmt)(?=\">)", contents,
+    perl = TRUE)
+gmt_file = unlist(regmatches(contents, rx))
+dest_gmt_file <- file.path(data_dir, gmt_file)
+download.file(paste(gmt_url, gmt_file, sep = ""), destfile = dest_gmt_file)
+```
+
+
+
+```{r convert_file, warning=FALSE, results='hide', message=FALSE}
+GeneRankedList <- data.frame(GeneName = rownames(qlf_hits$table), 
+                             rank = -log10(qlf_hits$table$PValue) * 
+                                    sign(qlf_hits$table$logFC))
+GeneRankedList <- GeneRankedList[order(GeneRankedList$rank, decreasing = TRUE),]
+write.table(GeneRankedList, file = "GeneRankedList.rnk", sep = "\t", 
+            quote = FALSE, row.names = FALSE)
+```
+
+
+* What method did you use? What genesets did you use? Make sure to specify versions and cite your methods *
+
+
+  * I used GSEA pre-ranked analysis with latest geneset with all human GOBP pathways and no GO and IEA
+  
+  * Version of GSEA is 4.1.0 
+  
+  * Max size:200
+  
+  * min size 15
+  
+  * Collapse:No collapse
+  
+  * Geneset: Geneset collection from bader lab on April 01 with all human GOBP pathways and no GO IEA 
+
+
+
+<br><br>
+
+
+### Summaries of enrichment results.
+
+* Enrichment in upregulated genes:
+  * 3234 / 4826 gene sets are upregulated in upregulated genes
+  * 2122 gene sets are significant at FDR < 25%
+  * 988 gene sets are significantly enriched at nominal pvalue < 1%
+  * 1580 gene sets are significantly enriched at nominal pvalue < 5%
+  * Top Significant pathways:
+    * HALLMARK_TNFA_SIGNALING_VIA_NFKB%MSIGDB_C2%HALLMARK_TNFA_SIGNALING_VIA_NFKB 
+    * Enrichment Score (ES)	: 0.69817275
+    * Normalized Enrichment Score (NES)	2.8901145
+    * Nominal p-value	0.0
+    * FDR q-value	0.0
+    * FWER p-Value	0.0
+    
+* Enrichment in downregulated genes:
+  * 1592 / 4826 gene sets are upregulated in downregulated genes
+  * 899 gene sets are significantly enriched at FDR < 25%
+  * 533 gene sets are significantly enriched at nominal pvalue < 1%
+  * 725 gene sets are significantly enriched at nominal pvalue < 5%
+  * Top Significant pathways:
+    * MITOCHONDRIAL TRANSLATION ELONGATION%REACTOME DATABASE ID RELEASE 79%5389840
+    * Enrichment Score (ES)	: -0.74
+    * Normalized Enrichment Score (NES)	-2.96   
+    * Nominal p-value	0.0
+    * FDR q-value	0.0
+    * FWER p-Value	0.0
+    
+
+<br><br>
+
+
+### Summaries of enrichment results.
+
+
+* How do these results compare to the results from the thresholded analysis in Assignment #2. Compare qualitatively. Is this a straight forward comparison? Why or why not?
+
+
+  * In A2 ,the resulte indicates that upregulated genes have enriched in EMC pathways which involved in bone mineralization and PI3K-Akt-mTOR-signaling pathway,a pathway involves in intracellular signaling pathway involved in numerous biological processes such as cell proliferation and apoptosis, angiogenesis, and glucose metabolism. In GSEA analysis, the most significant pathway is called HALLMARK_TNFA_SIGNALING_VIA_NFKB which is a pathway involved in cytokine storm response.In A2, the result of downregulated genes have enriched in regulation of transportation and regulation of translation.In GSEA,top hit pathway is Mitochondrial translation elongation which is also involved in regulation of transportation.This is not a striaight forward comparison because both of them has different algorithms, therefore the focus might be different, for further research we might need to consider both cases.
+
+
+# Visualize your Gene set Enrichment Analysis in Cytoscape
+
+
+### Create an enrichment map
+
+
+Enrichment map is an app in Cytoscape that used to visualize the biological pathways that enriched in a gene list
+
+* Here is the parameter used to build enrichment map after running GSEA
+![Parameters for creating a enrichment map](./A3Plot/parameter_for _enrichment_map.png.)
+
+* Here is the enrichment map which is the visualization of GSEA result before adjusted: we can see there are too many nodes here 
+
+![Enrichment map created with default filter parameter](./A3Plot/Before.png.)
+
+![Default filter parameter](./A3Plot/Filter_for_Nodes_Edges_Default.png.)
+
+
+* Here is the enrichment map where I adjust the parameters for nodes cuttoff to 0.01 to decrease the number of nodes.I also increase the similarity score for edges to 0.6874 to decrease number of edges as well
+
+
+![Adjusted filter parameter](./A3Plot/Filter_for_Nodes_Edges_after.png.)
+
+
+![Enrichment map created after adjustion](./A3Plot/After.png.)
+
+
+### Interpretation
+
+
+![Number of edge and nodes](./A3Plot/Node_Edge.png.)
+
+
+* number of nodes:2239
+* number of edges:10553
+* Threshold cutoff is :
+  * Node:Q-value >0.05
+  * Edge: Smilarity >0.6874
+  * I decrease the cutoff for node because initially there are too many nodes
+
+
+### Anotate the network
+
+
+
+* First I analyze with default settings as shown in the graph below:
+![Parameter for annotation](./A3Plot/annotation.png.)
+
+
+* Then I realize there are too many overlap and the graph is not viewable
+![Default nnotation graph](./A3Plot/Annotation_overlap.png.)
+Then I selected the "Layout network to prevent the overlap" and I got more clear graph as illustrate below
+
+![nonoverlapping annotated graph](./A3Plot/annotation_nonoverlap.png.)
+
+* I also tried to collapse the groups:
+![all collapse graph](./A3Plot/All_Collapse.png.)
+
+
+### Make a publication ready figure
+
+
+* Here is the graph with publication ready and legends
+
+
+
+![Publication ready Graph](./A3Plot/publication_ready.png.)
+![Legends](./A3Plot/Legends.png.)
+
+
+### Collapse your network to a theme network. 
+
+
+* What are the major themes present in this analysis? Do they fit with the model? Are there any novel pathways or themes?
+
+
+ * The major themes present in this analysis are apc g1 degradation,leukocyte lymphocyte differentiation,atp electron triphosphate.From GSEA, the top pathways are HALLMARK_TNFA_SIGNALING_VIA_NFKB%MSIGDB_C2%HALLMARK_TNFA_SIGNALING_VIA_NFKB and MITOCHONDRIAL TRANSLATION ELONGATION%REACTOME DATABASE ID RELEASE 79%5389840.Therefore they do not fit with the model. All of the themes oresent in this analysis are novel
+
+
+# Interpretation and detailed view of results
+
+
+* Do the enrichment results support conclusions or mechanism discussed in the original paper? How do these results differ from the results you got from Assignment #2 thresholded methods.
+
+
+  * Yes, in some degree the unregulated gene group's results show the pathways about hematopoietic pathways which is a feature of AML patients. AML is a disease that result in abnormal composition of hematopoietic cells. The up regulating in lymphocyte leukocyte differentiation pathway indicates that patients are have aberrant pattern of blood cells. Besides, in GSEA analysis, the first pathway in up-regulated genes is HALLMARK_TNFA_SIGNALING_VIA_NFKB%MSIGDB_C2%HALLMARK_TNFA_SIGNALING_VIA_NFKB, which represent pathway that involved in triggering cytokine storm. Cancers like AML will have increase in immune cell function which then result in cytokine storm.In addition, the pathway that down regulated are pathways involves in apc g1 degradation,this regulate the degradation of apc in g1 phase in cell cycles. Progression through mitosis is governed by sequential degradation of different cell cylce proteins.This process is facilitated with APC. Down regulating of the cell cycle protein will promote cell growth which satisfied with the characteristics of AML patients.And in GSEA analysis the down regulate pathway is MITOCHONDRIAL TRANSLATION ELONGATION%REACTOME DATABASE ID RELEASE 79%5389840  which is pathway that involves in mitochondria translation elongation and this is a novel pathway.
+ 
+ 
+ 
+ 
+* Can you find evidence, i.e. publications, to support some of the results that you see. How does this evidence support your result?
+
+
+  * According to the enrichment map, in the down regulating genes, the main theme is APC g1 degradation pathways. According to paper called "Expression and regulation of G1 cell-cycle inhibitors (p16INK4A, p15INK4B, p18INK4C, p19INK4D) in human acute myeloid leukemia and normal myeloid cells" written by J Schwaller et al(1997), many AML patients has low expression of regulatory cells during G1 phase such as p16INK4A, p15INK4B, p18INK4C,and p19INK4D.Also since some of the analysis is consistant with result of A2,there are reason demonstrated in previous assignment.
+  
+  
+# Post analysis
+
+
+I decide to do a post analysis using all drugs to find any potential drug related to the network
+
+I downloaded approved drug from bader website,and add to post analysis,here is the result:
+
+
+![Post analysis result](./A3Plot/PostAnalysis.png.)
+ 
+ 
+ And I do not think this provide consistant information about AML patients.
+
+
+
+# Citations
+
+
+Izzi, V., Heljasvaara, R., & Pihlajaniemi, T. (2017). Understanding the extracellular matrix in acute myeloid leukemia. Haematologica, 102(11), 1807–1809. https://doi.org/10.3324/haematol.2017.174847 
+
+Liu P, Ma D, Wang P, Pan C, Fang Q, Wang J. Nrf2 overexpression increases risk of high tumor mutation burden in acute myeloid leukemia by inhibiting MSH2. Cell Death Dis. 2021 Jan 5;12(1):20. doi: 10.1038/s41419-020-03331-x. PMID: 33414469; PMCID: PMC7790830.
+
+Isserlin R (2022). "BCB420 lectures". University of Toronto.  
+
+Zhu Y, Davis S, Stephens R, Meltzer PS, Chen Y (2008). “GEOmetadb: powerful alternative search engine for the Gene Expression Omnibus.” Bioinformatics (Oxford, England), 24(23), 2798–2800. ISSN 1367-4811, doi: 10.1093/bioinformatics/btn520
+
+Chen Y, Lun AAT, Smyth GK (2016). “From reads to genes to pathways: differential expression analysis of RNA-Seq experiments using Rsubread and the edgeR quasi-likelihood pipeline.” F1000Research, 5, 1438. doi: 10.12688/f1000research.8987.2.
+
+
+Castro, A., Bernis, C., Vigneron, S. et al. The anaphase-promoting complex: a key factor in the regulation of cell cycle. Oncogene 24, 314–325 (2005). https://doi.org/10.1038/sj.onc.1207973
+
+
+Schwaller J, Pabst T, Koeffler HP, Niklaus G, Loetscher P, Fey MF, Tobler A. Expression and regulation of G1 cell-cycle inhibitors (p16INK4A, p15INK4B, p18INK4C, p19INK4D) in human acute myeloid leukemia and normal myeloid cells. Leukemia. 1997 Jan;11(1):54-63. doi: 10.1038/sj.leu.2400522. PMID: 9001419.
+
+
+
+<br> <br>
+
+
+***
+
+
