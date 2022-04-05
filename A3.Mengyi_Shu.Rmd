@@ -406,9 +406,9 @@ For all below analyses on terms, I set the term size range to 1-300.
 ### GSEA input files and parameters
 
 
-* Firstly, I created a ranked gene list with hugo_symbol as the rownames of orginal table from assignment 2 amd calculated the rank scores from assignment 2 scores
+* Firstly, I created a ranked gene list with hugo_symbol as the rownames of orginal table from assignment 2 and calculated the rank scores from assignment 2 scores
 
-* The bader lab has provide many geneset for GSEA analysis [baderlab geneset](https://download.baderlab.org/EM_Genesets/)[@Bader] I choose to download the with April 1st GOBP all pathways and no GO IEA.This is the latest version of all human pathways
+* The bader lab has provide many geneset for GSEA analysis [baderlab geneset](https://download.baderlab.org/EM_Genesets/)[@Bader] I choose to download the latest one(April 1st) with  GOBP all pathways and no GO IEA.This is the latest version of all human pathways
 
 
 ```{r}
@@ -577,7 +577,7 @@ Then I selected the "Layout network to prevent the overlap" and I got more clear
 * What are the major themes present in this analysis? Do they fit with the model? Are there any novel pathways or themes?
 
 
- * The major themes present in this analysis are apc g1 degradation,leukocyte lymphocyte differentiation,atp electron triphosphate.From GSEA, the top pathways are HALLMARK_TNFA_SIGNALING_VIA_NFKB%MSIGDB_C2%HALLMARK_TNFA_SIGNALING_VIA_NFKB and MITOCHONDRIAL TRANSLATION ELONGATION%REACTOME DATABASE ID RELEASE 79%5389840.Therefore they do not fit with the model. All of the themes oresent in this analysis are novel
+ * The major themes present in this analysis are apc g1 degradation,leukocyte lymphocyte differentiation,atp electron triphosphate.From GSEA, the top pathways are HALLMARK_TNFA_SIGNALING_VIA_NFKB%MSIGDB_C2%HALLMARK_TNFA_SIGNALING_VIA_NFKB and MITOCHONDRIAL TRANSLATION ELONGATION%REACTOME DATABASE ID RELEASE 79%5389840.Therefore they do not fit with the model. All of the themes present in this analysis are novel
 
 
 # Interpretation and detailed view of results
